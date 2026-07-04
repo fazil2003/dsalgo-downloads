@@ -20,4 +20,4 @@ def create_stored_zip(filename, size_mb):
 if __name__ == "__main__":
     create_stored_zip("python.zip", 18)
     create_stored_zip("java.zip", 12)
-    create_stored_zip("cpp.zip", 22)
+    create_stored_zip("cpp.zip", 19)
