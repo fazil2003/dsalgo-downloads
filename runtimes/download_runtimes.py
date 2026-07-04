@@ -3,6 +3,7 @@ import tarfile
 import urllib.request
 import zipfile
 import shutil
+import subprocess
 
 RUNTIMES_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -18,7 +19,6 @@ def download_pyodide():
     os.makedirs(extract_dir, exist_ok=True)
     print("Extracting Pyodide core...")
     with tarfile.open(tar_path, "r:bz2") as tar:
-        # Use filter='fully_trusted' if supported to avoid warnings
         try:
             tar.extractall(path=extract_dir, filter='fully_trusted')
         except TypeError:
@@ -62,7 +62,6 @@ def download_teavm():
     print(f"TeaVM package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
 def generate_cpp_placeholder():
-    # Keep the 19MB placeholder for C++ to bypass jsDelivr limits during release testing
     zip_path = os.path.join(RUNTIMES_DIR, "cpp.zip")
     print("Generating C++ placeholder zip (19 MB)...")
     temp_file = os.path.join(RUNTIMES_DIR, "temp.bin")
@@ -77,12 +76,45 @@ def generate_cpp_placeholder():
     os.remove(temp_file)
     print(f"C++ placeholder size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
+def push_to_git():
+    print("Pusing updates to Git repository...")
+    try:
+        # Stage files relative to RUNTIMES_DIR
+        subprocess.run(["git", "add", "python.zip", "java.zip", "cpp.zip", "download_runtimes.py"], cwd=RUNTIMES_DIR, check=True)
+        # Commit files
+        subprocess.run(["git", "commit", "-m", "Auto-update runtime libraries and placeholders"], cwd=RUNTIMES_DIR, check=True)
+        # Push to origin
+        subprocess.run(["git", "push", "origin", "master"], cwd=RUNTIMES_DIR, check=True)
+        print("Git push completed successfully.\n")
+    except Exception as e:
+        print(f"Git operations failed: {e}\n")
+
+def purge_cdn_cache(filename):
+    url = f"https://purge.jsdelivr.net/gh/fazil2003/dsalgo-downloads@master/runtimes/{filename}"
+    print(f"Purging jsDelivr CDN cache for {filename}...")
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req) as response:
+            res_data = response.read().decode('utf-8')
+            print(f"Purge response for {filename}: {res_data}")
+    except Exception as e:
+        print(f"Failed to purge cache for {filename}: {e}")
+
 def main():
     print("Starting download and packaging of production runtimes...\n")
     download_pyodide()
     download_teavm()
     generate_cpp_placeholder()
-    print("All tasks finished successfully.")
+    
+    # Automate git push and CDN purge
+    push_to_git()
+    purge_cdn_cache("python.zip")
+    purge_cdn_cache("java.zip")
+    purge_cdn_cache("cpp.zip")
+    print("\nAll tasks finished successfully.")
 
 if __name__ == "__main__":
     main()
