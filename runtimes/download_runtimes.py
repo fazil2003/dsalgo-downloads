@@ -86,8 +86,11 @@ def download_teavm():
     dx_dex_jar = os.path.join(temp_dir, "dx.dex.jar")
     
     # Compile mock SourceVersion class needed by ECJ but missing on Android runtime
-    javax_dir = os.path.join(temp_dir, "javax", "lang", "model")
-    os.makedirs(javax_dir, exist_ok=True)
+    javax_src_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
+    javax_out_dir = os.path.join(temp_dir, "javax_out")
+    os.makedirs(javax_src_dir, exist_ok=True)
+    os.makedirs(javax_out_dir, exist_ok=True)
+    
     source_version_code = """package javax.lang.model;
 public enum SourceVersion {
     RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
@@ -96,16 +99,23 @@ public enum SourceVersion {
     public static SourceVersion latest() { return RELEASE_21; }
 }
 """
-    source_version_file = os.path.join(javax_dir, "SourceVersion.java")
+    source_version_file = os.path.join(javax_src_dir, "SourceVersion.java")
     with open(source_version_file, "w") as f:
         f.write(source_version_code)
         
     print("Compiling mock SourceVersion...")
-    subprocess.run(["javac", "-source", "8", "-target", "8", source_version_file], check=True)
-    source_version_class = os.path.join(javax_dir, "SourceVersion.class")
+    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir, source_version_file], check=True)
+
+    source_version_jar = os.path.join(temp_dir, "source_version.jar")
+    with zipfile.ZipFile(source_version_jar, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(javax_out_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, javax_out_dir)
+                zipf.write(file_path, arcname)
 
     print("Dexing ECJ compiler...")
-    subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar, source_version_class], check=True, shell=True)
+    subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar, source_version_jar], check=True, shell=True)
     
     # Copy resource bundle properties files into ecj.dex.jar
     print("Copying resources to ecj.dex.jar...")
