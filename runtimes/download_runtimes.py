@@ -69,25 +69,6 @@ def download_teavm():
     shutil.rmtree(temp_dir)
     print(f"TeaVM package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
-def generate_cpp_placeholder():
-    """
-    Generates a dummy 19MB C++ placeholder runtime package (cpp.zip)
-    for development/testing environments.
-    """
-    zip_path = os.path.join(RUNTIMES_DIR, "cpp.zip")
-    print("Generating C++ placeholder zip (19 MB)...")
-    temp_file = os.path.join(RUNTIMES_DIR, "temp.bin")
-    chunk_size = 1024 * 1024
-    with open(temp_file, "wb") as f:
-        for _ in range(19):
-            f.write(b'\x00' * chunk_size)
-            
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_STORED) as z:
-        z.write(temp_file, "runtime_data.bin")
-        
-    os.remove(temp_file)
-    print(f"C++ placeholder size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
-
 def push_to_git():
     """
     Pushes the newly compiled/updated zip bundles to the dsalgo-downloads
@@ -96,7 +77,7 @@ def push_to_git():
     print("Pusing updates to Git repository...")
     try:
         # Stage files relative to RUNTIMES_DIR
-        subprocess.run(["git", "add", "python.zip", "java.zip", "cpp.zip", "download_runtimes.py"], cwd=RUNTIMES_DIR, check=True)
+        subprocess.run(["git", "add", "python.zip", "java.zip", "download_runtimes.py"], cwd=RUNTIMES_DIR, check=True)
         # Commit files
         subprocess.run(["git", "commit", "-m", "Auto-update runtime libraries and placeholders"], cwd=RUNTIMES_DIR, check=True)
         # Push to origin
@@ -131,13 +112,11 @@ def main():
     print("Starting download and packaging of production runtimes...\n")
     download_pyodide()
     download_teavm()
-    generate_cpp_placeholder()
     
     # Automate git push and CDN purge
     push_to_git()
     purge_cdn_cache("python.zip")
     purge_cdn_cache("java.zip")
-    purge_cdn_cache("cpp.zip")
     print("\nAll tasks finished successfully.")
 
 if __name__ == "__main__":
