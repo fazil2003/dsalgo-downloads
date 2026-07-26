@@ -85,8 +85,27 @@ def download_teavm():
     ecj_dex_jar = os.path.join(temp_dir, "ecj.dex.jar")
     dx_dex_jar = os.path.join(temp_dir, "dx.dex.jar")
     
+    # Compile mock SourceVersion class needed by ECJ but missing on Android runtime
+    javax_dir = os.path.join(temp_dir, "javax", "lang", "model")
+    os.makedirs(javax_dir, exist_ok=True)
+    source_version_code = """package javax.lang.model;
+public enum SourceVersion {
+    RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
+    RELEASE_9, RELEASE_10, RELEASE_11, RELEASE_12, RELEASE_13, RELEASE_14, RELEASE_15, RELEASE_16,
+    RELEASE_17, RELEASE_18, RELEASE_19, RELEASE_20, RELEASE_21;
+    public static SourceVersion latest() { return RELEASE_21; }
+}
+"""
+    source_version_file = os.path.join(javax_dir, "SourceVersion.java")
+    with open(source_version_file, "w") as f:
+        f.write(source_version_code)
+        
+    print("Compiling mock SourceVersion...")
+    subprocess.run(["javac", "-source", "8", "-target", "8", source_version_file], check=True)
+    source_version_class = os.path.join(javax_dir, "SourceVersion.class")
+
     print("Dexing ECJ compiler...")
-    subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar], check=True, shell=True)
+    subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar, source_version_class], check=True, shell=True)
     
     # Copy resource bundle properties files into ecj.dex.jar
     print("Copying resources to ecj.dex.jar...")
