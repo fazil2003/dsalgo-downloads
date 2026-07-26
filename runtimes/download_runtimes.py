@@ -43,31 +43,62 @@ def download_pyodide():
 
 def download_teavm():
     """
-    Downloads the Java compiler and class library dependencies (TeaVM),
-    and packages them into a single java.zip bundle.
+    Downloads the Java compiler (ECJ) and Android DX libraries,
+    dexes them using d8, and packages them into java.zip.
     """
-    urls = {
-        "teavm-cli.jar": "https://repo1.maven.org/maven2/org/teavm/teavm-cli/0.10.0/teavm-cli-0.10.0.jar",
-        "teavm-classlib.jar": "https://repo1.maven.org/maven2/org/teavm/teavm-classlib/0.10.0/teavm-classlib-0.10.0.jar"
-    }
-    
-    temp_dir = os.path.join(RUNTIMES_DIR, "teavm_temp")
+    ecj_url = "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.26.0/ecj-3.26.0.jar"
+    temp_dir = os.path.join(RUNTIMES_DIR, "java_temp")
     os.makedirs(temp_dir, exist_ok=True)
     
-    for filename, url in urls.items():
-        print(f"Downloading {filename}...")
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response, open(os.path.join(temp_dir, filename), 'wb') as out:
-            out.write(response.read())
-            
+    ecj_jar = os.path.join(temp_dir, "ecj.jar")
+    print("Downloading ECJ...")
+    req = urllib.request.Request(ecj_url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as response, open(ecj_jar, 'wb') as out:
+        out.write(response.read())
+        
+    sdk_dir = "D:\\Softwares\\Android\\Sdk"
+    build_tools_dir = os.path.join(sdk_dir, "build-tools")
+    
+    dx_jar_path = None
+    d8_path = None
+    
+    if os.path.exists(build_tools_dir):
+        for version in sorted(os.listdir(build_tools_dir), reverse=True):
+            candidate_dx = os.path.join(build_tools_dir, version, "lib", "dx.jar")
+            if os.path.exists(candidate_dx):
+                dx_jar_path = candidate_dx
+                break
+        for version in sorted(os.listdir(build_tools_dir), reverse=True):
+            candidate_d8 = os.path.join(build_tools_dir, version, "d8.bat")
+            if os.path.exists(candidate_d8):
+                d8_path = candidate_d8
+                break
+                
+    if not dx_jar_path or not d8_path:
+        print("Error: Could not locate dx.jar or d8.bat in Android SDK.")
+        shutil.rmtree(temp_dir)
+        return
+        
+    print(f"Found dx.jar: {dx_jar_path}")
+    print(f"Found d8.bat: {d8_path}")
+    
+    ecj_dex_jar = os.path.join(temp_dir, "ecj.dex.jar")
+    dx_dex_jar = os.path.join(temp_dir, "dx.dex.jar")
+    
+    print("Dexing ECJ compiler...")
+    subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar], check=True, shell=True)
+    
+    print("Dexing DX tool...")
+    subprocess.run([d8_path, "--output", dx_dex_jar, dx_jar_path], check=True, shell=True)
+    
     zip_path = os.path.join(RUNTIMES_DIR, "java.zip")
     print("Creating java.zip...")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
-        for file in os.listdir(temp_dir):
-            zipf.write(os.path.join(temp_dir, file), file)
-            
+        zipf.write(ecj_dex_jar, "ecj.dex.jar")
+        zipf.write(dx_dex_jar, "dx.dex.jar")
+        
     shutil.rmtree(temp_dir)
-    print(f"TeaVM package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
+    print(f"Java package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
 def push_to_git():
     """
