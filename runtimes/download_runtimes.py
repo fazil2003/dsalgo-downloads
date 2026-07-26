@@ -88,6 +88,14 @@ def download_teavm():
     print("Dexing ECJ compiler...")
     subprocess.run([d8_path, "--output", ecj_dex_jar, ecj_jar], check=True, shell=True)
     
+    # Copy resource bundle properties files into ecj.dex.jar
+    print("Copying resources to ecj.dex.jar...")
+    with zipfile.ZipFile(ecj_jar, 'r') as src_zip:
+        with zipfile.ZipFile(ecj_dex_jar, 'a') as dest_zip:
+            for item in src_zip.infolist():
+                if not item.filename.endswith('.class') and not item.filename.startswith('META-INF/'):
+                    dest_zip.writestr(item.filename, src_zip.read(item.filename))
+
     print("Dexing DX tool...")
     subprocess.run([d8_path, "--output", dx_dex_jar, dx_jar_path], check=True, shell=True)
     
