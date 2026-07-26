@@ -8,6 +8,10 @@ import subprocess
 RUNTIMES_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def download_pyodide():
+    """
+    Downloads the Python runtime (Pyodide core) tarball, extracts it,
+    and packages the extracted compiler files into a single python.zip.
+    """
     url = "https://github.com/pyodide/pyodide/releases/download/0.26.1/pyodide-core-0.26.1.tar.bz2"
     tar_path = os.path.join(RUNTIMES_DIR, "pyodide-core.tar.bz2")
     print("Downloading production Pyodide core tarball...")
@@ -38,6 +42,10 @@ def download_pyodide():
     print(f"Pyodide package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
 def download_teavm():
+    """
+    Downloads the Java compiler and class library dependencies (TeaVM),
+    and packages them into a single java.zip bundle.
+    """
     urls = {
         "teavm-cli.jar": "https://repo1.maven.org/maven2/org/teavm/teavm-cli/0.10.0/teavm-cli-0.10.0.jar",
         "teavm-classlib.jar": "https://repo1.maven.org/maven2/org/teavm/teavm-classlib/0.10.0/teavm-classlib-0.10.0.jar"
@@ -62,6 +70,10 @@ def download_teavm():
     print(f"TeaVM package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
 def generate_cpp_placeholder():
+    """
+    Generates a dummy 19MB C++ placeholder runtime package (cpp.zip)
+    for development/testing environments.
+    """
     zip_path = os.path.join(RUNTIMES_DIR, "cpp.zip")
     print("Generating C++ placeholder zip (19 MB)...")
     temp_file = os.path.join(RUNTIMES_DIR, "temp.bin")
@@ -77,6 +89,10 @@ def generate_cpp_placeholder():
     print(f"C++ placeholder size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
 def push_to_git():
+    """
+    Pushes the newly compiled/updated zip bundles to the dsalgo-downloads
+    GitHub repository master branch.
+    """
     print("Pusing updates to Git repository...")
     try:
         # Stage files relative to RUNTIMES_DIR
@@ -90,6 +106,10 @@ def push_to_git():
         print(f"Git operations failed: {e}\n")
 
 def purge_cdn_cache(filename):
+    """
+    Sends a cache purge request to jsDelivr CDN to ensure mobile clients
+    fetch the newly uploaded runtime zip file immediately.
+    """
     url = f"https://purge.jsdelivr.net/gh/fazil2003/dsalgo-downloads@master/runtimes/{filename}"
     print(f"Purging jsDelivr CDN cache for {filename}...")
     try:
@@ -104,6 +124,10 @@ def purge_cdn_cache(filename):
         print(f"Failed to purge cache for {filename}: {e}")
 
 def main():
+    """
+    Main orchestration function to download, package, publish, and purge
+    all development/production runtimes.
+    """
     print("Starting download and packaging of production runtimes...\n")
     download_pyodide()
     download_teavm()
