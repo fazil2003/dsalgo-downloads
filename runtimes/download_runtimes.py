@@ -85,12 +85,16 @@ def download_teavm():
     ecj_dex_jar = os.path.join(temp_dir, "ecj.dex.jar")
     dx_dex_jar = os.path.join(temp_dir, "dx.dex.jar")
     
-    # Compile mock SourceVersion class needed by ECJ but missing on Android runtime
-    javax_src_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
+    # Compile mock SourceVersion and Annotation Processing classes needed by ECJ but missing on Android
+    javax_src_model_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
+    javax_src_proc_dir = os.path.join(temp_dir, "javax_src", "javax", "annotation", "processing")
     javax_out_dir = os.path.join(temp_dir, "javax_out")
-    os.makedirs(javax_src_dir, exist_ok=True)
+    
+    os.makedirs(javax_src_model_dir, exist_ok=True)
+    os.makedirs(javax_src_proc_dir, exist_ok=True)
     os.makedirs(javax_out_dir, exist_ok=True)
     
+    # 1. SourceVersion
     source_version_code = """package javax.lang.model;
 public enum SourceVersion {
     RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
@@ -99,12 +103,23 @@ public enum SourceVersion {
     public static SourceVersion latest() { return RELEASE_21; }
 }
 """
-    source_version_file = os.path.join(javax_src_dir, "SourceVersion.java")
-    with open(source_version_file, "w") as f:
+    with open(os.path.join(javax_src_model_dir, "SourceVersion.java"), "w") as f:
         f.write(source_version_code)
         
-    print("Compiling mock SourceVersion...")
-    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir, source_version_file], check=True)
+    # 2. Annotation processing stubs
+    stub_classes = ["ProcessingEnvironment", "Processor", "RoundEnvironment", "Filer", "Messager"]
+    for name in stub_classes:
+        code = f"package javax.annotation.processing;\npublic interface {name} {{}}\n"
+        with open(os.path.join(javax_src_proc_dir, f"{name}.java"), "w") as f:
+            f.write(code)
+            
+    print("Compiling mock javax.* classes...")
+    # Find all compiled source files
+    sources = [
+        os.path.join(javax_src_model_dir, "SourceVersion.java"),
+        *[os.path.join(javax_src_proc_dir, f"{name}.java") for name in stub_classes]
+    ]
+    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir] + sources, check=True)
 
     source_version_jar = os.path.join(temp_dir, "source_version.jar")
     with zipfile.ZipFile(source_version_jar, 'w', zipfile.ZIP_DEFLATED) as zipf:
