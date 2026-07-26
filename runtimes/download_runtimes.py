@@ -112,6 +112,7 @@ public enum SourceVersion {
             for file in files:
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, javax_out_dir)
+                arcname = arcname.replace('\\', '/')
                 zipf.write(file_path, arcname)
 
     print("Dexing ECJ compiler...")
