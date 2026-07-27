@@ -120,6 +120,25 @@ public class JdkCompilerExtractor {
     os.makedirs(javax_out_dir, exist_ok=True)
     subprocess.run(["java", extractor_file, javax_out_dir], check=True)
 
+    # 2. Overwrite the extracted JDK SourceVersion.class with our safe Android-compatible mock SourceVersion
+    javax_src_model_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
+    os.makedirs(javax_src_model_dir, exist_ok=True)
+    source_version_code = """package javax.lang.model;
+public enum SourceVersion {
+    RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
+    RELEASE_9, RELEASE_10, RELEASE_11, RELEASE_12, RELEASE_13, RELEASE_14, RELEASE_15, RELEASE_16,
+    RELEASE_17, RELEASE_18, RELEASE_19, RELEASE_20, RELEASE_21;
+    public static SourceVersion latest() { return RELEASE_21; }
+    public static SourceVersion latestSupported() { return RELEASE_21; }
+}
+"""
+    source_version_file = os.path.join(javax_src_model_dir, "SourceVersion.java")
+    with open(source_version_file, "w") as f:
+        f.write(source_version_code)
+    
+    print("Compiling safe SourceVersion mock class...")
+    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir, source_version_file], check=True)
+
     source_version_jar = os.path.join(temp_dir, "source_version.jar")
     with zipfile.ZipFile(source_version_jar, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, dirs, files in os.walk(javax_out_dir):
