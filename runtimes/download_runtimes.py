@@ -46,7 +46,7 @@ def download_teavm():
     Downloads the Java compiler (ECJ) and Android DX libraries,
     dexes them using d8, and packages them into java.zip.
     """
-    ecj_url = "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.26.0/ecj-3.26.0.jar"
+    ecj_url = "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.12.3/ecj-3.12.3.jar"
     temp_dir = os.path.join(RUNTIMES_DIR, "java_temp")
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -95,16 +95,47 @@ public class JdkCompilerExtractor {
         Path destDir = Paths.get(args[0]);
         FileSystem fs = FileSystems.getFileSystem(URI.create("jrt:/"));
         Path compilerModule = fs.getPath("/modules/java.compiler");
-        
         Files.walk(compilerModule).forEach(path -> {
             if (Files.isRegularFile(path) && path.toString().endsWith(".class")) {
                 Path rel = compilerModule.relativize(path);
+                String relStr = rel.toString().replace('\\\\', '/');
+                if (relStr.startsWith("javax/tools/")) {
+                    return;
+                }
                 Path dest = destDir.resolve(rel.toString().replace("/", FileSystems.getDefault().getSeparator()));
                 try {
                     Files.createDirectories(dest.getParent());
                     Files.copy(path, dest, StandardCopyOption.REPLACE_EXISTING);
                 } catch (IOException e) {
                     e.printStackTrace();
+                }
+            }
+        });
+
+        Path baseModule = fs.getPath("/modules/java.base");
+        Files.walk(baseModule).forEach(path -> {
+            if (Files.isRegularFile(path) && path.toString().endsWith(".class")) {
+                Path rel = baseModule.relativize(path);
+                String relStr = rel.toString().replace('\\\\', '/');
+                if (relStr.startsWith("java/lang/") || relStr.startsWith("java/util/") ||
+                    relStr.startsWith("java/io/") || relStr.startsWith("java/math/") ||
+                    relStr.startsWith("java/text/")) {
+                    
+                    // Skip subpackages we don't need to keep it small
+                    if (relStr.contains("/concurrent/") || relStr.contains("/function/") || 
+                        relStr.contains("/stream/") || relStr.contains("/spi/") || 
+                        relStr.contains("/regex/") || relStr.contains("/jar/") || 
+                        relStr.contains("/zip/") || relStr.contains("/logging/")) {
+                        return;
+                    }
+
+                    Path dest = destDir.resolve(rel.toString().replace("/", FileSystems.getDefault().getSeparator()));
+                    try {
+                        Files.createDirectories(dest.getParent());
+                        Files.copy(path, dest, StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         });
@@ -120,9 +151,13 @@ public class JdkCompilerExtractor {
     os.makedirs(javax_out_dir, exist_ok=True)
     subprocess.run(["java", extractor_file, javax_out_dir], check=True)
 
-    # 2. Overwrite the extracted JDK SourceVersion.class with our safe Android-compatible mock SourceVersion
+    # 2. Overwrite/add custom safe mock classes
     javax_src_model_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
+    javax_src_tools_dir = os.path.join(temp_dir, "javax_src", "javax", "tools")
     os.makedirs(javax_src_model_dir, exist_ok=True)
+    os.makedirs(javax_src_tools_dir, exist_ok=True)
+
+    # 2a. SourceVersion mock
     source_version_code = """package javax.lang.model;
 public enum SourceVersion {
     RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
@@ -135,9 +170,82 @@ public enum SourceVersion {
     source_version_file = os.path.join(javax_src_model_dir, "SourceVersion.java")
     with open(source_version_file, "w") as f:
         f.write(source_version_code)
-    
-    print("Compiling safe SourceVersion mock class...")
-    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir, source_version_file], check=True)
+
+    # 2b. javax.tools stubs (Java 8 compatible stubs to satisfy compiler signatures without jrt lookup trigger)
+    stubs = {
+        "FileObject.java": "package javax.tools;\npublic interface FileObject {\n    java.net.URI toUri();\n    String getName();\n    java.io.InputStream openInputStream() throws java.io.IOException;\n    java.io.OutputStream openOutputStream() throws java.io.IOException;\n    java.io.Reader openReader(boolean ignoreEncodingErrors) throws java.io.IOException;\n    CharSequence getCharContent(boolean ignoreEncodingErrors) throws java.io.IOException;\n    java.io.Writer openWriter() throws java.io.IOException;\n    long getLastModified();\n    boolean delete();\n}",
+        "JavaFileObject.java": "package javax.tools;\npublic interface JavaFileObject extends FileObject {\n    enum Kind { SOURCE, CLASS, HTML, OTHER }\n}",
+        "JavaFileManager.java": """package javax.tools;
+import java.io.IOException;
+import java.util.Set;
+public interface JavaFileManager extends java.io.Closeable, java.io.Flushable, OptionChecker {
+    interface Location {
+        default String getName() { return ""; }
+        default boolean isOutputLocation() { return false; }
+    }
+    default ClassLoader getClassLoader(Location location) { return null; }
+    default Iterable<JavaFileObject> list(Location location, String packageName, Set<JavaFileObject.Kind> kinds, boolean recurse) throws IOException { return null; }
+    default String inferBinaryName(Location location, JavaFileObject file) { return null; }
+    default boolean isSameFile(FileObject a, FileObject b) { return false; }
+    default boolean handleOption(String current, java.util.Iterator<String> remaining) { return false; }
+    default boolean hasLocation(Location location) { return false; }
+    default JavaFileObject getJavaFileForInput(Location location, String className, JavaFileObject.Kind kind) throws IOException { return null; }
+    default JavaFileObject getJavaFileForOutput(Location location, String className, JavaFileObject.Kind kind, FileObject sibling) throws IOException { return null; }
+    default FileObject getFileForInput(Location location, String packageName, String relativeName) throws IOException { return null; }
+    default FileObject getFileForOutput(Location location, String packageName, String relativeName, FileObject sibling) throws IOException { return null; }
+    default void close() throws IOException {}
+    default void flush() throws IOException {}
+}""",
+        "StandardJavaFileManager.java": """package javax.tools;
+import java.io.File;
+import java.io.IOException;
+public interface StandardJavaFileManager extends JavaFileManager {
+    default Iterable<? extends JavaFileObject> getJavaFileObjectsFromFiles(Iterable<? extends File> files) { return null; }
+    default Iterable<? extends JavaFileObject> getJavaFileObjects(File... files) { return null; }
+    default Iterable<? extends JavaFileObject> getJavaFileObjectsFromStrings(Iterable<String> names) { return null; }
+    default Iterable<? extends JavaFileObject> getJavaFileObjects(String... names) { return null; }
+    default void setLocation(Location location, Iterable<? extends File> path) throws IOException {}
+    default Iterable<? extends File> getLocation(Location location) { return null; }
+}""",
+        "OptionChecker.java": """package javax.tools;
+public interface OptionChecker {
+    default boolean handleOption(String current, java.util.Iterator<String> remaining) { return false; }
+    default int isSupportedOption(String option) { return -1; }
+}""",
+        "Tool.java": "package javax.tools;\npublic interface Tool {}",
+        "JavaCompiler.java": "package javax.tools;\npublic interface JavaCompiler extends Tool, OptionChecker {\n    interface CompilationTask extends java.util.concurrent.Callable<Boolean> {}\n}",
+        "DocumentationTool.java": "package javax.tools;\npublic interface DocumentationTool extends Tool, OptionChecker {}",
+        "StandardLocation.java": "package javax.tools;\npublic enum StandardLocation implements JavaFileManager.Location {\n    CLASS_OUTPUT, SOURCE_OUTPUT, CLASS_PATH, SOURCE_PATH, ANNOTATION_PROCESSOR_PATH, PLATFORM_CLASS_PATH, NATIVE_HEADER_OUTPUT;\n}",
+        "SimpleJavaFileObject.java": """package javax.tools;
+import java.net.URI;
+public class SimpleJavaFileObject implements JavaFileObject {
+    protected final URI uri;
+    protected final Kind kind;
+    protected SimpleJavaFileObject(URI uri, Kind kind) {
+        this.uri = uri;
+        this.kind = kind;
+    }
+    public URI toUri() { return uri; }
+    public String getName() { return uri.getPath(); }
+    public java.io.InputStream openInputStream() throws java.io.IOException { throw new UnsupportedOperationException(); }
+    public java.io.OutputStream openOutputStream() throws java.io.IOException { throw new UnsupportedOperationException(); }
+    public java.io.Reader openReader(boolean ignoreEncodingErrors) throws java.io.IOException { throw new UnsupportedOperationException(); }
+    public CharSequence getCharContent(boolean ignoreEncodingErrors) throws java.io.IOException { throw new UnsupportedOperationException(); }
+    public java.io.Writer openWriter() throws java.io.IOException { throw new UnsupportedOperationException(); }
+    public long getLastModified() { return 0; }
+    public boolean delete() { return false; }
+}"""
+    }
+
+    stub_files = []
+    for filename, code in stubs.items():
+        filepath = os.path.join(javax_src_tools_dir, filename)
+        with open(filepath, "w") as f:
+            f.write(code)
+        stub_files.append(filepath)
+
+    print("Compiling safe SourceVersion and javax.tools stub classes...")
+    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir, source_version_file] + stub_files, check=True)
 
     source_version_jar = os.path.join(temp_dir, "source_version.jar")
     with zipfile.ZipFile(source_version_jar, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -167,6 +275,7 @@ public enum SourceVersion {
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
         zipf.write(ecj_dex_jar, "ecj.dex.jar")
         zipf.write(dx_dex_jar, "dx.dex.jar")
+        zipf.write(source_version_jar, "rt.jar")
         
     shutil.rmtree(temp_dir)
     print(f"Java package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
