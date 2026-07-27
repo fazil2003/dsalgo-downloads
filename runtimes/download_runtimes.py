@@ -85,41 +85,40 @@ def download_teavm():
     ecj_dex_jar = os.path.join(temp_dir, "ecj.dex.jar")
     dx_dex_jar = os.path.join(temp_dir, "dx.dex.jar")
     
-    # Compile mock SourceVersion and Annotation Processing classes needed by ECJ but missing on Android
-    javax_src_model_dir = os.path.join(temp_dir, "javax_src", "javax", "lang", "model")
-    javax_src_proc_dir = os.path.join(temp_dir, "javax_src", "javax", "annotation", "processing")
-    javax_out_dir = os.path.join(temp_dir, "javax_out")
-    
-    os.makedirs(javax_src_model_dir, exist_ok=True)
-    os.makedirs(javax_src_proc_dir, exist_ok=True)
-    os.makedirs(javax_out_dir, exist_ok=True)
-    
-    # 1. SourceVersion
-    source_version_code = """package javax.lang.model;
-public enum SourceVersion {
-    RELEASE_0, RELEASE_1, RELEASE_2, RELEASE_3, RELEASE_4, RELEASE_5, RELEASE_6, RELEASE_7, RELEASE_8,
-    RELEASE_9, RELEASE_10, RELEASE_11, RELEASE_12, RELEASE_13, RELEASE_14, RELEASE_15, RELEASE_16,
-    RELEASE_17, RELEASE_18, RELEASE_19, RELEASE_20, RELEASE_21;
-    public static SourceVersion latest() { return RELEASE_21; }
+    # Extract all official javax compiler classes from host JDK to resolve missing classes at once
+    extractor_code = """import java.nio.file.*;
+import java.net.URI;
+import java.io.IOException;
+
+public class JdkCompilerExtractor {
+    public static void main(String[] args) throws Exception {
+        Path destDir = Paths.get(args[0]);
+        FileSystem fs = FileSystems.getFileSystem(URI.create("jrt:/"));
+        Path compilerModule = fs.getPath("/modules/java.compiler");
+        
+        Files.walk(compilerModule).forEach(path -> {
+            if (Files.isRegularFile(path) && path.toString().endsWith(".class")) {
+                Path rel = compilerModule.relativize(path);
+                Path dest = destDir.resolve(rel.toString().replace("/", FileSystems.getDefault().getSeparator()));
+                try {
+                    Files.createDirectories(dest.getParent());
+                    Files.copy(path, dest, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
 }
 """
-    with open(os.path.join(javax_src_model_dir, "SourceVersion.java"), "w") as f:
-        f.write(source_version_code)
+    extractor_file = os.path.join(temp_dir, "JdkCompilerExtractor.java")
+    with open(extractor_file, "w") as f:
+        f.write(extractor_code)
         
-    # 2. Annotation processing stubs
-    stub_classes = ["ProcessingEnvironment", "Processor", "RoundEnvironment", "Filer", "Messager"]
-    for name in stub_classes:
-        code = f"package javax.annotation.processing;\npublic interface {name} {{}}\n"
-        with open(os.path.join(javax_src_proc_dir, f"{name}.java"), "w") as f:
-            f.write(code)
-            
-    print("Compiling mock javax.* classes...")
-    # Find all compiled source files
-    sources = [
-        os.path.join(javax_src_model_dir, "SourceVersion.java"),
-        *[os.path.join(javax_src_proc_dir, f"{name}.java") for name in stub_classes]
-    ]
-    subprocess.run(["javac", "-source", "8", "-target", "8", "-d", javax_out_dir] + sources, check=True)
+    print("Extracting compiler API classes from host JDK...")
+    javax_out_dir = os.path.join(temp_dir, "javax_out")
+    os.makedirs(javax_out_dir, exist_ok=True)
+    subprocess.run(["java", extractor_file, javax_out_dir], check=True)
 
     source_version_jar = os.path.join(temp_dir, "source_version.jar")
     with zipfile.ZipFile(source_version_jar, 'w', zipfile.ZIP_DEFLATED) as zipf:
