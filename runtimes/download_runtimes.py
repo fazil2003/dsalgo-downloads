@@ -280,55 +280,19 @@ public class SimpleJavaFileObject implements JavaFileObject {
     shutil.rmtree(temp_dir)
     print(f"Java package size: {os.path.getsize(zip_path) / (1024*1024):.2f} MB\n")
 
-def push_to_git():
-    """
-    Pushes the newly compiled/updated zip bundles to the dsalgo-downloads
-    GitHub repository master branch.
-    """
-    print("Pusing updates to Git repository...")
-    try:
-        # Stage files relative to RUNTIMES_DIR
-        subprocess.run(["git", "add", "python.zip", "java.zip", "download_runtimes.py"], cwd=RUNTIMES_DIR, check=True)
-        # Commit files
-        subprocess.run(["git", "commit", "-m", "Auto-update runtime libraries and placeholders"], cwd=RUNTIMES_DIR, check=True)
-        # Push to origin
-        subprocess.run(["git", "push", "origin", "master"], cwd=RUNTIMES_DIR, check=True)
-        print("Git push completed successfully.\n")
-    except Exception as e:
-        print(f"Git operations failed: {e}\n")
-
-def purge_cdn_cache(filename):
-    """
-    Sends a cache purge request to jsDelivr CDN to ensure mobile clients
-    fetch the newly uploaded runtime zip file immediately.
-    """
-    url = f"https://purge.jsdelivr.net/gh/fazil2003/dsalgo-downloads@master/runtimes/{filename}"
-    print(f"Purging jsDelivr CDN cache for {filename}...")
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req) as response:
-            res_data = response.read().decode('utf-8')
-            print(f"Purge response for {filename}: {res_data}")
-    except Exception as e:
-        print(f"Failed to purge cache for {filename}: {e}")
-
 def main():
     """
-    Main orchestration function to download, package, publish, and purge
-    all development/production runtimes.
+    Main orchestration function to download and package all
+    development/production runtimes into python.zip / java.zip.
+
+    Publishing (git push + jsDelivr version tag) is a separate step -
+    run publish_runtimes.py afterward to push these bundles live.
     """
     print("Starting download and packaging of production runtimes...\n")
     download_pyodide()
     download_teavm()
-    
-    # Automate git push and CDN purge
-    push_to_git()
-    purge_cdn_cache("python.zip")
-    purge_cdn_cache("java.zip")
-    print("\nAll tasks finished successfully.")
+    print("\nAll build tasks finished successfully.")
+    print("Run publish_runtimes.py to push these bundles to GitHub and cut a new jsDelivr tag.")
 
 if __name__ == "__main__":
     main()
