@@ -122,8 +122,7 @@ public class JdkCompilerExtractor {
                     relStr.startsWith("java/text/")) {
                     
                     // Skip subpackages we don't need to keep it small
-                    if (relStr.contains("/concurrent/") || relStr.contains("/function/") || 
-                        relStr.contains("/stream/") || relStr.contains("/spi/") || 
+                    if (relStr.contains("/concurrent/") || relStr.contains("/spi/") ||
                         relStr.contains("/regex/") || relStr.contains("/jar/") || 
                         relStr.contains("/zip/") || relStr.contains("/logging/")) {
                         return;
