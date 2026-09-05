@@ -20,6 +20,7 @@ algorithms-app/app/src/main/java/com/fazil/dsalgo/screen/DownloadManagerScreenCo
 to match the newly printed tag.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -30,13 +31,33 @@ RUNTIMES_DIR = os.path.dirname(os.path.abspath(__file__))
 TAG_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
 RUNTIME_FILES = ["python.zip", "java.zip"]
+VERSIONS_FILENAME = "versions.json"
+VERSIONS_FILE = os.path.join(RUNTIMES_DIR, VERSIONS_FILENAME)
+
+
+def update_versions_json(new_tag):
+    """Updates versions.json with the new version for all runtimes."""
+    version_str = new_tag.lstrip("v")
+    versions = {}
+    if os.path.exists(VERSIONS_FILE):
+        with open(VERSIONS_FILE, "r") as f:
+            versions = json.load(f)
+    versions["python"] = version_str
+    versions["java"] = version_str
+    versions["cpp"] = versions.get("cpp", version_str)
+    versions["tag"] = new_tag
+    with open(VERSIONS_FILE, "w") as f:
+        json.dump(versions, f, indent=2)
+        f.write("\n")
+    print(f"Updated {VERSIONS_FILENAME}: {versions}")
 
 
 def push_to_git():
     """Commits and pushes the built zip bundles to the master branch."""
     print("Pushing updates to Git repository...")
     subprocess.run(
-        ["git", "add", "python.zip", "java.zip", "download_runtimes.py", "publish_runtimes.py"],
+        ["git", "add"] + RUNTIME_FILES + [VERSIONS_FILENAME,
+         "download_runtimes.py", "publish_runtimes.py"],
         cwd=RUNTIMES_DIR, check=True)
     subprocess.run(
         ["git", "commit", "-m", "Auto-update runtime libraries and placeholders"],
@@ -101,12 +122,17 @@ def push_new_tag():
 
 def main():
     print("Publishing runtime bundles...\n")
+
+    latest = get_latest_tag()
+    new_tag = bump_patch_version(latest) if latest else "v1.0.0"
+    update_versions_json(new_tag)
+
     push_to_git()
-    for filename in RUNTIME_FILES:
+    for filename in RUNTIME_FILES + [VERSIONS_FILENAME]:
         purge_cdn_cache("master", filename)
 
     new_tag = push_new_tag()
-    for filename in RUNTIME_FILES:
+    for filename in RUNTIME_FILES + [VERSIONS_FILENAME]:
         purge_cdn_cache(new_tag, filename)
 
     print("All publish tasks finished successfully.")
